@@ -247,20 +247,24 @@
         </div>
     </div>
 
-    <!-- JavaScript: Authentication Logic + Calendar + CSV Download + Runtime Counter -->
+    <!-- JavaScript: Authentication Logic + Calendar + CSV Download + LocalStorage Persistence -->
     <script>
-    // Prompt once, store result in a global
-    var userEmail = prompt("Please enter your email:");
+    // 1) Skip re‐prompting for email if it's already in localStorage
+    var storedEmail = localStorage.getItem('userEmail');
+    var userEmail = storedEmail ? storedEmail : prompt("Please enter your email:");
+    if (!storedEmail) {
+        localStorage.setItem('userEmail', userEmail);
+    }
 
     document.addEventListener('DOMContentLoaded', function () {
-        // Determine admin status once
+        // 2) Determine admin status once
         var admins = ["test123@gmail.com"];
         var isAdmin = userEmail && admins.includes(userEmail.trim().toLowerCase());
         if (isAdmin) {
             document.getElementById('adminSection').style.display = 'flex';
         }
 
-        // 1) Initialize FullCalendar
+        // 3) Initialize FullCalendar
         var calendarEl = document.getElementById('calendar');
         var calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: 'timeGridWeek',
@@ -268,13 +272,63 @@
         });
         calendar.render();
 
-        // 2) Tool Data Structures
+        // 4) Tool Data Structures
         var tools = ["Tool #1", "Tool #2", "Tool #3", "Tool #4"];
 
-        // --- Runtime counter object (stores total usage per user, in ms) ---
+        // 5) Runtime counter object (stores total usage per user, in ms)
         var userUsage = {};
 
-        // 3) Determine Unavailable Tools at a Given Moment
+        //
+        // === LOCALSTORAGE HELPERS FOR EVENTS PERSISTENCE ===
+        //
+
+        // Convert existing calendar events into an array of plain objects
+        function saveEventsToLocalStorage() {
+            var all = calendar.getEvents();
+            var plain = all.map(function(ev) {
+                return {
+                    title: ev.title,
+                    start: ev.start.toISOString(),
+                    end: ev.end.toISOString()
+                };
+            });
+            localStorage.setItem('reservations', JSON.stringify(plain));
+        }
+
+        // Read saved events from localStorage (if any) and add them back to the calendar
+        function loadEventsFromLocalStorage() {
+            var saved = localStorage.getItem('reservations');
+            if (!saved) return;
+            try {
+                var arr = JSON.parse(saved);
+                arr.forEach(function(obj) {
+                    calendar.addEvent({
+                        title: obj.title,
+                        start: obj.start,
+                        end: obj.end
+                    });
+                    // Also update userUsage for these loaded events
+                    // (so the console log still shows their total usage)
+                    var parts = obj.title.split(':');
+                    var memberName = parts[0].trim();
+                    var startDate = new Date(obj.start);
+                    var endDate = new Date(obj.end);
+                    var durationMs = endDate.getTime() - startDate.getTime();
+                    if (!userUsage[memberName]) {
+                        userUsage[memberName] = 0;
+                    }
+                    userUsage[memberName] += durationMs;
+                });
+            } catch (err) {
+                console.error("Could not parse saved reservations:", err);
+            }
+        }
+
+        //
+        // === TOOL AVAILABILITY LOGIC (unchanged) ===
+        //
+
+        // 6) Determine Unavailable Tools at a Given Moment
         function getUnavailableToolsAt(momentInTime) {
             var overlapping = new Set();
             calendar.getEvents().forEach(function (event) {
@@ -292,7 +346,7 @@
             return Array.from(overlapping);
         }
 
-        // 4) Render "All Tools" and "Unavailable Tools" Lists
+        // 7) Render "All Tools" and "Unavailable Tools" Lists
         function renderToolLists(unavailableNow) {
             var allToolsList         = document.getElementById('allTools');
             var unavailableToolsList = document.getElementById('unavailableTools');
@@ -310,7 +364,7 @@
             });
         }
 
-        // 5) Rebuild Tool-Selection Dropdown Based on Current Unavailability
+        // 8) Rebuild Tool-Selection Dropdown Based on Current Unavailability
         function renderToolDropdown(unavailableNow) {
             var toolDropdown = document.getElementById('tool');
             toolDropdown.innerHTML = '';
@@ -324,7 +378,7 @@
             });
         }
 
-        // 6) Refresh Everything Based on "Now"
+        // 9) Refresh Everything Based on "Now"
         function markCurrentlyUnavailableTools() {
             var now = new Date();
             var unavailableNow = getUnavailableToolsAt(now);
@@ -332,7 +386,7 @@
             renderToolDropdown(unavailableNow);
         }
 
-        // 7) Check If a Tool Is Free During a User-Selected Window
+        // 10) Check If a Tool Is Free During a User-Selected Window
         function checkToolAvailability(tool, start, end) {
             var events = calendar.getEvents();
             for (var i = 0; i < events.length; i++) {
@@ -351,7 +405,7 @@
             return true;
         }
 
-        // --- NEW FUNCTION: Check if a user already has an overlapping booking ---
+        // 11) Check if a user already has a booking at that time
         function isUserOverlapping(user, start, end) {
             var events = calendar.getEvents();
             for (var i = 0; i < events.length; i++) {
@@ -371,9 +425,17 @@
             }
             return false;
         }
-        // --- END NEW FUNCTION ---
 
-        // 8) "Add Reservation" Handler
+        //
+        // === LOAD SAVED RESERVATIONS BEFORE anything else ===
+        //
+        loadEventsFromLocalStorage();
+        // After loading, we still need to render tool lists & dropdown based on current time:
+        markCurrentlyUnavailableTools();
+
+        //
+        // === "Add Reservation" Handler ===
+        //
         document.getElementById('reservationForm').addEventListener('submit', function (e) {
             e.preventDefault();
             // All fields are required by HTML, so they must be filled.
@@ -387,22 +449,21 @@
             var start = new Date(date + 'T' + startTime);
             var end   = new Date(date + 'T' + endTime);
 
-            // --- CHECK: Prevent same user from holding two overlapping benches ---
+            // Prevent same user from holding two overlapping benches
             if (isUserOverlapping(member, start, end)) {
                 alert('You already have a reservation at an overlapping time. Please choose a different time.');
                 return;
             }
-            // --- END CHECK ---
 
             if (checkToolAvailability(tool, start, end)) {
-                calendar.addEvent({
+                var newEvent = calendar.addEvent({
                     title: member + ': ' + tool + ' - ' + notes,
                     start: date + 'T' + startTime,
                     end:   date + 'T' + endTime,
                     extendedProps: { notes: notes }
                 });
 
-                // --- UPDATE runtime counter for this user ---
+                // Update runtime counter for this user
                 var durationMs = end.getTime() - start.getTime();
                 if (!userUsage[member]) {
                     userUsage[member] = 0;
@@ -411,7 +472,9 @@
                 // Log total usage in hours to console (rounded to two decimals)
                 var hoursUsed = (userUsage[member] / (1000 * 60 * 60)).toFixed(2);
                 console.log(member + ' total usage: ' + hoursUsed + ' hours');
-                // --- END UPDATE ---
+
+                // After adding an event, immediately persist all events
+                saveEventsToLocalStorage();
 
                 // Recompute availability immediately
                 markCurrentlyUnavailableTools();
@@ -422,7 +485,9 @@
             }
         });
 
-        // 9) "Add Tool" (Admin) Handler (only if admin)
+        //
+        // === "Add Tool" Handler (Admin only) ===
+        //
         if (isAdmin) {
             document.getElementById('toolForm').addEventListener('submit', function (e) {
                 e.preventDefault();
@@ -443,23 +508,28 @@
                 }
             });
 
-            // 10) "Remove Tool" (Admin) Handler
+            //
+            // === "Remove Tool" Handler (Admin only) ===
+            //
             document.getElementById('removeToolForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 var toolToRemove = document.getElementById('removeTool').value;
                 tools = tools.filter(t => t !== toolToRemove);
-                // Also remove any calendar events for that tool
+                // Also remove any calendar events for that tool, then re-save
                 calendar.getEvents().forEach(function (ev) {
                     if (ev.title.includes(toolToRemove)) {
                         ev.remove();
                     }
                 });
+                saveEventsToLocalStorage();
                 markCurrentlyUnavailableTools();
                 updateRemoveToolDropdown();
             });
         }
 
-        // 11) Keep the "Remove Tool" Dropdown in Sync (only for admin)
+        //
+        // === Keep the "Remove Tool" Dropdown in Sync (Admin only) ===
+        //
         function updateRemoveToolDropdown() {
             var removeDropdown = document.getElementById('removeTool');
             removeDropdown.innerHTML = '';
@@ -471,15 +541,19 @@
             });
         }
 
-        // 12) INITIALIZATION on Page Load
-        markCurrentlyUnavailableTools();
+        //
+        // === INITIALIZATION on Page Load ===
+        //
+        // (Tool lists/dropdowns already updated after loading events above.)
         if (isAdmin) {
             updateRemoveToolDropdown();
         }
-        // 13) Recompute Unavailability Every Minute
+        // Recompute Unavailability Every Minute
         setInterval(markCurrentlyUnavailableTools, 60 * 1000);
 
-        // 14) "Download Snapshot CSV" Functionality (extended to include usage summary)
+        //
+        // === "Download Snapshot CSV" (extended to include usage summary) ===
+        //
         function downloadSnapshotCSV() {
             var view      = calendar.view;
             var weekStart = view.activeStart;
@@ -513,13 +587,13 @@
                     return str;
                 }
                 eventsThisWeek.forEach(function (ev) {
-                    var parts       = ev.title.split(':');
-                    var memberName  = parts[0].trim();
+                    var parts        = ev.title.split(':');
+                    var memberName   = parts[0].trim();
                     var toolAndNotes = parts[1].trim();
-                    var toolName    = toolAndNotes.split(' - ')[0].trim();
-                    var notes       = toolAndNotes.split(' - ')[1] || '';
-                    var startStr    = ev.start.toLocaleString();
-                    var endStr      = ev.end.toLocaleString();
+                    var toolName     = toolAndNotes.split(' - ')[0].trim();
+                    var notes        = toolAndNotes.split(' - ')[1] || '';
+                    var startStr     = ev.start.toLocaleString();
+                    var endStr       = ev.end.toLocaleString();
                     csvRows.push([
                         escapeForCSV(memberName),
                         escapeForCSV(toolName),
@@ -530,8 +604,7 @@
                 });
             }
 
-            // --- NEW: Build per-user usage totals for this week ---
-            // Compute total duration per user (in ms)
+            // Build per-user usage totals for this week
             var usageMap = {};
             eventsThisWeek.forEach(function(ev) {
                 var parts      = ev.title.split(':');
@@ -545,17 +618,22 @@
                 usageMap[memberName] += durationMs;
             });
 
-            // Add a blank row to separate the two sections
+            // Blank row to separate sections
             csvRows.push(',,,,');
-            // Header row for the usage summary
+            // Header row for usage summary
             csvRows.push(['Member', 'Total Hours This Week'].join(','));
 
-            // Add one row per user with hours (rounded to two decimals)
+            // One row per user with hours (rounded to two decimals)
             Object.keys(usageMap).forEach(function(user) {
                 var hours = (usageMap[user] / (1000 * 60 * 60)).toFixed(2);
+                function escapeForCSV(str) {
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return '"' + str.replace(/"/g, '""') + '"';
+                    }
+                    return str;
+                }
                 csvRows.push([escapeForCSV(user), escapeForCSV(hours)].join(','));
             });
-            // --- END NEW ---
 
             var csvString = csvRows.join('\r\n');
             var blob      = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
