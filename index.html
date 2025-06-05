@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Brake Systems Development Scheduling Dashboard (User/Admin Views)</title>
+  <title>Brake Systems Scheduling Dashboard (User View)</title>
 
   <!-- Google Font (Roboto) - open source -->
   <link
@@ -18,38 +18,146 @@
   <script src="https://unpkg.com/fullcalendar@5.10.1/main.min.js"></script>
 
   <style>
-    /* … (your existing CSS goes here) … */
+    /* Global resets & font */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background-color: #f5f5f5;
+      color: #333;
+      padding: 20px;
+    }
+
+    h1, h2 {
+      font-weight: 700;
+      color: #444;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    /* Subtle underline animation under headers */
+    h1::after, h2::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: -4px;
+      width: 0;
+      height: 3px;
+      background-color: #007bff;
+      transition: width 0.3s ease-in-out;
+    }
+    h1:hover::after, h2:hover::after {
+      width: 50px;
+    }
+
+    /* Container cards */
+    .card {
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      padding: 20px;
+    }
+
+    /* Button styling */
+    button, input[type="submit"] {
+      background-color: #007bff;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 10px 16px;
+      transition: background-color 0.2s ease-in-out;
+    }
+    button:hover, input[type="submit"]:hover {
+      background-color: #0056b3;
+    }
+
+    /* Tool list styling */
+    .tool-lists {
+      display: flex;
+      gap: 20px;
+    }
+    .tool-lists .tool-card {
+      flex: 1;
+    }
+    ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    ul li {
+      background-color: #f9f9f9;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      transition: background-color 0.2s;
+    }
+    ul li:hover {
+      background-color: #e9e9e9;
+    }
+
+    /* Form inputs */
+    form label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    form input[type="text"],
+    form input[type="date"],
+    form input[type="time"],
+    form select,
+    form textarea {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      display: block;
+      margin-bottom: 12px;
+      padding: 8px;
+      width: 100%;
+      transition: border-color 0.2s;
+    }
+    form input[type="text"]:focus,
+    form input[type="date"]:focus,
+    form input[type="time"]:focus,
+    form select:focus,
+    form textarea:focus {
+      border-color: #007bff;
+      outline: none;
+    }
+
+    /* Calendar container */
+    #calendar-card {
+      margin-top: 20px;
+    }
+    #calendar {
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 10px;
+      background-color: #fff;
+    }
+
+    /* Hidden calendar div (still used for logic) */
+    #calendarHidden {
+      display: none;
+    }
+
+    /* Admin Login container */
+    .admin-login {
+      text-align: right;
+      margin-bottom: 20px;
+    }
   </style>
 </head>
 <body>
-  <!-- ========================
-       PROMPT-ONCE SCRIPT
-       ======================== --> 
-  <script>
-    (function() {
-      // 1) Check localStorage for “userEmail”
-      var stored = window.localStorage.getItem('userEmail');
-
-      if (stored && stored.trim() !== '') {
-        // If we already have it, use that
-        window.userEmail = stored;
-      } else {
-        // Otherwise, prompt once and save it
-        var answer = prompt("Please enter your email:");
-        if (answer && answer.trim() !== '') {
-          window.localStorage.setItem('userEmail', answer.trim());
-          window.userEmail = answer.trim();
-        } else {
-          // If canceled or blank, still store an empty string so we don't re-prompt
-          window.localStorage.setItem('userEmail', "");
-          window.userEmail = "";
-        }
-      }
-    })();
-  </script>
-
   <!-- Title -->
-  <h1>Scheduling Dashboard</h1>
+  <h1>Scheduling Dashboard (User View)</h1>
+
+  <!-- Admin Login Button -->
+  <div class="admin-login">
+    <button id="adminLoginBtn">Admin Login</button>
+  </div>
 
   <!-- Top Bar: Download button aligned to the right -->
   <div class="top-bar">
@@ -60,7 +168,7 @@
   <div class="card">
     <div class="tool-lists">
       <div class="tool-card">
-        <h2>Tools</h2>
+        <h2>All Tools</h2>
         <ul id="allTools"></ul>
       </div>
       <div class="tool-card">
@@ -106,54 +214,28 @@
 
   <!-- Calendar View (Card) -->
   <div class="card" id="calendar-card">
-    <h2>Calendar View</h2>
+    <h2>Calendar View (This Week’s Reservations)</h2>
     <div id="calendar"></div>
   </div>
 
-  <!-- Admin Section (hidden by default) -->
-  <div id="adminSection" class="admin-section" style="display: none;">
-    <div class="card admin-card">
-      <h2>Add Tool</h2>
-      <form id="toolForm">
-        <div>
-          <label for="newTool">Tool Name:</label>
-          <input type="text" id="newTool" name="newTool" required />
-        </div>
-        <div style="margin-top: 10px;">
-          <input type="submit" value="Add Tool" />
-        </div>
-      </form>
-    </div>
-    <div class="card admin-card">
-      <h2>Remove Tool</h2>
-      <form id="removeToolForm">
-        <div>
-          <label for="removeTool">Select Tool to Remove:</label>
-          <select id="removeTool" name="removeTool" required></select>
-        </div>
-        <div style="margin-top: 10px;">
-          <input type="submit" value="Remove Tool" />
-        </div>
-      </form>
-    </div>
-  </div>
+  <!-- Hidden calendar for internal logic -->
+  <div id="calendarHidden"></div>
 
-  <!-- ========================
-       MAIN SCRIPT (unchanged)
-       ======================== --> 
+  <!-- JavaScript: Admin Login + Calendar + Reservations + localStorage -->
   <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      // Now window.userEmail is already set (no re-prompt)
-      var admins = ["test123@gmail.com"];
-      var isAdmin = false;
-      if (window.userEmail) {
-        isAdmin = admins.includes(window.userEmail.trim().toLowerCase());
+    // === 1) ADMIN LOGIN BUTTON ===
+    document.getElementById('adminLoginBtn').addEventListener('click', function () {
+      var answer = prompt("Please enter your admin email:");
+      if (answer && answer.trim().toLowerCase() === "test123@gmail.com") {
+        localStorage.setItem('isAdmin', 'true');
+        window.location.href = "admin.html";
+      } else {
+        alert("Not an admin.");
       }
-      if (isAdmin) {
-        document.getElementById('adminSection').style.display = 'flex';
-      }
+    });
 
-      // Initialize FullCalendar
+    document.addEventListener('DOMContentLoaded', function () {
+      // === 2) Initialize FullCalendar (visible) ===
       var calendarEl = document.getElementById('calendar');
       var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'timeGridWeek',
@@ -161,13 +243,11 @@
       });
       calendar.render();
 
-      // Tool data
+      // === 3) Tool data structures + runtime counters ===
       var tools = ["Tool #1", "Tool #2", "Tool #3", "Tool #4"];
-      var userUsage = {}; // runtime counter
+      var userUsage = {}; // stores total usage per user in ms
 
-      //
-      // LOCALSTORAGE HELPERS FOR EVENTS PERSISTENCE
-      //
+      // === 4) localStorage helpers for event persistence ===
       function saveEventsToLocalStorage() {
         var all = calendar.getEvents();
         var plain = all.map(function(ev) {
@@ -179,7 +259,6 @@
         });
         localStorage.setItem('reservations', JSON.stringify(plain));
       }
-
       function loadEventsFromLocalStorage() {
         var saved = localStorage.getItem('reservations');
         if (!saved) return;
@@ -191,7 +270,7 @@
               start: obj.start,
               end: obj.end
             });
-            // Also update userUsage for these loaded events
+            // Accumulate runtime usage
             var parts = obj.title.split(':');
             var memberName = parts[0].trim();
             var startDate = new Date(obj.start);
@@ -203,13 +282,11 @@
             userUsage[memberName] += durationMs;
           });
         } catch (err) {
-          console.error("Could not parse saved reservations:", err);
+          console.error("Error parsing saved reservations:", err);
         }
       }
 
-      //
-      // TOOL AVAILABILITY LOGIC
-      //
+      // === 5) Tool availability logic ===
       function getUnavailableToolsAt(momentInTime) {
         var overlapping = new Set();
         calendar.getEvents().forEach(function (event) {
@@ -217,9 +294,7 @@
           if (parts.length < 2) return;
           var toolAndNotes = parts[1].trim();
           var toolName = toolAndNotes.split(' - ')[0];
-
-          var evStart = event.start;
-          var evEnd = event.end;
+          var evStart = event.start, evEnd = event.end;
           if (momentInTime >= evStart && momentInTime < evEnd) {
             overlapping.add(toolName);
           }
@@ -232,7 +307,6 @@
         var unavailableToolsList = document.getElementById('unavailableTools');
         allToolsList.innerHTML = '';
         unavailableToolsList.innerHTML = '';
-
         tools.forEach(function (tool) {
           var li = document.createElement('li');
           li.textContent = tool;
@@ -269,8 +343,7 @@
         for (var i = 0; i < events.length; i++) {
           var event = events[i];
           if (event.title.includes(tool)) {
-            var evStart = event.start;
-            var evEnd = event.end;
+            var evStart = event.start, evEnd = event.end;
             if ((start >= evStart && start < evEnd) ||
                 (end > evStart && end <= evEnd) ||
                 (start <= evStart && end >= evEnd)) {
@@ -287,8 +360,7 @@
           var event = events[i];
           var existingUser = event.title.split(':')[0].trim();
           if (existingUser === user) {
-            var evStart = event.start;
-            var evEnd = event.end;
+            var evStart = event.start, evEnd = event.end;
             if ((start >= evStart && start < evEnd) ||
                 (end > evStart && end <= evEnd) ||
                 (start <= evStart && end >= evEnd)) {
@@ -299,11 +371,11 @@
         return false;
       }
 
-      // LOAD SAVED EVENTS ON PAGE LOAD
+      // === 6) Load saved events + update availability on page load ===
       loadEventsFromLocalStorage();
       markCurrentlyUnavailableTools();
 
-      // RESERVATION FORM HANDLER
+      // === 7) “Add Reservation” Handler ===
       document.getElementById('reservationForm').addEventListener('submit', function (e) {
         e.preventDefault();
         var member = document.getElementById('member').value.trim();
@@ -314,22 +386,21 @@
         var notes = document.getElementById('notes').value.trim();
 
         var start = new Date(date + 'T' + startTime);
-        var end = new Date(date + 'T' + endTime);
+        var end   = new Date(date + 'T' + endTime);
 
         if (isUserOverlapping(member, start, end)) {
           alert('You already have a reservation at an overlapping time.');
           return;
         }
-
         if (checkToolAvailability(tool, start, end)) {
-          var newEvent = calendar.addEvent({
+          calendar.addEvent({
             title: member + ': ' + tool + ' - ' + notes,
             start: date + 'T' + startTime,
-            end: date + 'T' + endTime,
+            end:   date + 'T' + endTime,
             extendedProps: { notes: notes }
           });
 
-          // UPDATE USAGE COUNTER
+          // Update runtime usage counter
           var durationMs = end.getTime() - start.getTime();
           if (!userUsage[member]) {
             userUsage[member] = 0;
@@ -338,74 +409,24 @@
           console.log(member + ' total usage: ' +
             ((userUsage[member] / (1000 * 60 * 60)).toFixed(2)) + ' hours');
 
-          // SAVE EVENTS
+          // Save to localStorage
           saveEventsToLocalStorage();
 
           markCurrentlyUnavailableTools();
           document.getElementById('reservationForm').reset();
         } else {
-          alert('Tool is unavailable during the selected time.');
+          alert('That tool is unavailable during the selected time.');
         }
       });
 
-      // ADMIN: ADD TOOL
-      if (isAdmin) {
-        document.getElementById('toolForm').addEventListener('submit', function (e) {
-          e.preventDefault();
-          var newTool = document.getElementById('newTool').value.trim();
-          if (newTool === '') {
-            alert('Tool name cannot be empty.');
-            return;
-          }
-          if (tools.includes(newTool)) {
-            alert('Tool with the same name already exists!');
-          } else {
-            tools.push(newTool);
-            markCurrentlyUnavailableTools();
-            updateRemoveToolDropdown();
-            document.getElementById('toolForm').reset();
-          }
-        });
-
-        // ADMIN: REMOVE TOOL
-        document.getElementById('removeToolForm').addEventListener('submit', function (e) {
-          e.preventDefault();
-          var toolToRemove = document.getElementById('removeTool').value;
-          tools = tools.filter(t => t !== toolToRemove);
-          calendar.getEvents().forEach(function (ev) {
-            if (ev.title.includes(toolToRemove)) {
-              ev.remove();
-            }
-          });
-          saveEventsToLocalStorage();
-          markCurrentlyUnavailableTools();
-          updateRemoveToolDropdown();
-        });
-      }
-
-      // SYNC "Remove Tool" DROPDOWN (Admin only)
-      function updateRemoveToolDropdown() {
-        var removeDropdown = document.getElementById('removeTool');
-        removeDropdown.innerHTML = '';
-        tools.forEach(function (tool) {
-          var option = document.createElement('option');
-          option.value = tool;
-          option.textContent = tool;
-          removeDropdown.appendChild(option);
-        });
-      }
-
-      // INITIALIZATION
-      if (isAdmin) {
-        updateRemoveToolDropdown();
-      }
+      // Recompute availability every minute
       setInterval(markCurrentlyUnavailableTools, 60 * 1000);
 
-      // DOWNLOAD SNAPSHOT CSV (with usage summary)
+      // === 8) “Download Weekly Snapshot” CSV (including usage summary) ===
       function downloadSnapshotCSV() {
-        var view = calendar.view;
+        var view      = calendar.view;
         var weekStart = view.activeStart;
-        var weekEnd = view.activeEnd;
+        var weekEnd   = view.activeEnd;
         var eventsThisWeek = [];
 
         calendar.getEvents().forEach(function (ev) {
@@ -420,6 +441,7 @@
         });
 
         var csvRows = [];
+        // Header row
         csvRows.push(['Member', 'Tool', 'Start DateTime', 'End DateTime', 'Notes'].join(','));
 
         if (eventsThisWeek.length === 0) {
@@ -432,13 +454,13 @@
             return str;
           }
           eventsThisWeek.forEach(function (ev) {
-            var parts = ev.title.split(':');
-            var memberName = parts[0].trim();
+            var parts        = ev.title.split(':');
+            var memberName   = parts[0].trim();
             var toolAndNotes = parts[1].trim();
-            var toolName = toolAndNotes.split(' - ')[0].trim();
-            var notes = toolAndNotes.split(' - ')[1] || '';
-            var startStr = ev.start.toLocaleString();
-            var endStr = ev.end.toLocaleString();
+            var toolName     = toolAndNotes.split(' - ')[0].trim();
+            var notes        = toolAndNotes.split(' - ')[1] || '';
+            var startStr     = ev.start.toLocaleString();
+            var endStr       = ev.end.toLocaleString();
             csvRows.push([
               escapeForCSV(memberName),
               escapeForCSV(toolName),
@@ -449,12 +471,13 @@
           });
         }
 
+        // Build usage summary for the week
         var usageMap = {};
         eventsThisWeek.forEach(function (ev) {
-          var parts = ev.title.split(':');
+          var parts      = ev.title.split(':');
           var memberName = parts[0].trim();
-          var startMs = ev.start.getTime();
-          var endMs = ev.end.getTime();
+          var startMs    = ev.start.getTime();
+          var endMs      = ev.end.getTime();
           var durationMs = endMs - startMs;
           if (!usageMap[memberName]) {
             usageMap[memberName] = 0;
@@ -462,6 +485,7 @@
           usageMap[memberName] += durationMs;
         });
 
+        // Blank row, then header for usage summary
         csvRows.push(',,,,');
         csvRows.push(['Member', 'Total Hours This Week'].join(','));
         Object.keys(usageMap).forEach(function (user) {
@@ -476,8 +500,8 @@
         });
 
         var csvString = csvRows.join('\r\n');
-        var blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-        var filename =
+        var blob      = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        var filename  =
           'schedule_snapshot_' +
           weekStart.getFullYear().toString() +
           String(weekStart.getMonth() + 1).padStart(2, '0') +
