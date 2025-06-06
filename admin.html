@@ -138,7 +138,7 @@
       background-color: #fff;
     }
 
-    /* Admin section layout (Add/Remove) */
+    /* Admin section layout (Add/Remove tools) */
     .admin-section {
       display: flex;
       gap: 20px;
@@ -153,15 +153,31 @@
       text-align: right;
       margin-bottom: 20px;
     }
+
+    /* Style the small Delete button on each event */
+    .fc-event .delete-btn {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 6px;
+      background-color: #dc3545;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 10px;
+      cursor: pointer;
+      vertical-align: middle;
+    }
+    .fc-event .delete-btn:hover {
+      background-color: #b02a37;
+    }
   </style>
 </head>
 <body>
-  <!-- 1) VERIFY ADMIN STATUS (redirect if not) -->
+  <!-- VERIFY ADMIN STATUS (redirect if not) -->
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       var isAdmin = localStorage.getItem('isAdmin');
       if (isAdmin !== 'true') {
-        // Not logged in → send back to index.html
+        // If not admin, redirect back to user view
         window.location.href = "index.html";
       }
     });
@@ -172,7 +188,6 @@
     <button id="logoutBtn">Logout Admin</button>
   </div>
 
-  <!-- Title -->
   <h1>Scheduling Dashboard (Admin View)</h1>
 
   <!-- Top Bar: Download button aligned to the right -->
@@ -180,7 +195,7 @@
     <button id="downloadSnapshotBtn">Download Weekly Snapshot</button>
   </div>
 
-  <!-- Admin: Tool Management & Availability -->
+  <!-- Admin: Tool Management & Availability Section -->
   <div class="admin-section">
     <!-- All Tools / Unavailable Tools Lists -->
     <div class="card" style="flex: 1;">
@@ -264,7 +279,7 @@
     <div id="calendar"></div>
   </div>
 
-  <!-- JavaScript: Admin Logic + Calendar + Reservations + localStorage -->
+  <!-- JavaScript: Admin logic + Calendar + Reservations + Delete‐Reservation + localStorage -->
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       // === 1) Logout logic ===
@@ -277,15 +292,34 @@
       var calendarEl = document.getElementById('calendar');
       var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'timeGridWeek',
-        events: []
+        events: [],
+        eventDidMount: function(info) {
+          // Add a small “Delete” button onto each event
+          var deleteBtn = document.createElement('span');
+          deleteBtn.innerText = "Delete";
+          deleteBtn.className = "delete-btn";
+
+          // When clicked, remove this event and update localStorage + availability
+          deleteBtn.addEventListener('click', function (e) {
+            e.stopPropagation(); // Prevent FullCalendar’s default click
+            if (confirm("Are you sure you want to delete this reservation?")) {
+              info.event.remove();
+              saveEventsToLocalStorage();
+              markCurrentlyUnavailableTools();
+            }
+          });
+
+          // Append the button to the event’s DOM node:
+          info.el.querySelector('.fc-event-title').appendChild(deleteBtn);
+        }
       });
       calendar.render();
 
-      // === 3) Tool data & runtime counters ===
+      // === 3) Tool data structures & runtime counters ===
       var tools = ["Tool #1", "Tool #2", "Tool #3", "Tool #4"];
-      var userUsage = {}; // total usage per user in ms
+      var userUsage = {}; // stores total usage per user (ms)
 
-      // === 4) localStorage helpers for events persistence ===
+      // === 4) localStorage helpers for event persistence ===
       function saveEventsToLocalStorage() {
         var all = calendar.getEvents();
         var plain = all.map(function(ev) {
@@ -308,7 +342,7 @@
               start: obj.start,
               end: obj.end
             });
-            // accumulate runtime usage
+            // Also accumulate runtime usage from previously saved events
             var parts = obj.title.split(':');
             var memberName = parts[0].trim();
             var startDate = new Date(obj.start);
@@ -340,9 +374,9 @@
         return Array.from(overlapping);
       }
       function renderToolLists(unavailableNow) {
-        var allToolsList = document.getElementById('allTools');
+        var allToolsList         = document.getElementById('allTools');
         var unavailableToolsList = document.getElementById('unavailableTools');
-        allToolsList.innerHTML = '';
+        allToolsList.innerHTML         = '';
         unavailableToolsList.innerHTML = '';
         tools.forEach(function (tool) {
           var li = document.createElement('li');
@@ -360,7 +394,7 @@
         tools.forEach(function (tool) {
           if (!unavailableNow.includes(tool)) {
             var option = document.createElement('option');
-            option.value = tool;
+            option.value       = tool;
             option.textContent = tool;
             toolDropdown.appendChild(option);
           }
@@ -377,10 +411,11 @@
         for (var i = 0; i < events.length; i++) {
           var event = events[i];
           if (event.title.includes(tool)) {
-            var evStart = event.start, evEnd = event.end;
+            var evStart = event.start,
+                evEnd   = event.end;
             if ((start >= evStart && start < evEnd) ||
-                (end > evStart && end <= evEnd) ||
-                (start <= evStart && end >= evEnd)) {
+                (end   > evStart && end   <= evEnd) ||
+                (start <= evStart && end   >= evEnd)) {
               return false;
             }
           }
@@ -395,8 +430,8 @@
           if (existingUser === user) {
             var evStart = event.start, evEnd = event.end;
             if ((start >= evStart && start < evEnd) ||
-                (end > evStart && end <= evEnd) ||
-                (start <= evStart && end >= evEnd)) {
+                (end   > evStart && end   <= evEnd) ||
+                (start <= evStart && end   >= evEnd)) {
               return true;
             }
           }
@@ -404,19 +439,19 @@
         return false;
       }
 
-      // === 6) Load existing reservations + update availability ===
+      // === 6) Load saved reservations + update availability on load ===
       loadEventsFromLocalStorage();
       markCurrentlyUnavailableTools();
 
       // === 7) “Add Reservation” (Admin) Handler ===
       document.getElementById('reservationForm').addEventListener('submit', function (e) {
         e.preventDefault();
-        var member = document.getElementById('member').value.trim();
-        var tool = document.getElementById('tool').value;
-        var date = document.getElementById('date').value;
+        var member    = document.getElementById('member').value.trim();
+        var tool      = document.getElementById('tool').value;
+        var date      = document.getElementById('date').value;
         var startTime = document.getElementById('startTime').value;
-        var endTime = document.getElementById('endTime').value;
-        var notes = document.getElementById('notes').value.trim();
+        var endTime   = document.getElementById('endTime').value;
+        var notes     = document.getElementById('notes').value.trim();
 
         var start = new Date(date + 'T' + startTime);
         var end   = new Date(date + 'T' + endTime);
@@ -433,7 +468,7 @@
             extendedProps: { notes: notes }
           });
 
-          // Update runtime usage
+          // Update runtime usage counter
           var durationMs = end.getTime() - start.getTime();
           if (!userUsage[member]) {
             userUsage[member] = 0;
@@ -448,7 +483,7 @@
           markCurrentlyUnavailableTools();
           document.getElementById('reservationForm').reset();
         } else {
-          alert('That tool is unavailable during this time.');
+          alert('That tool is unavailable during the selected time.');
         }
       });
 
@@ -475,7 +510,8 @@
         e.preventDefault();
         var toolToRemove = document.getElementById('removeTool').value;
         tools = tools.filter(t => t !== toolToRemove);
-        // Also remove any calendar events for that tool
+
+        // Remove any events for that tool, then save
         calendar.getEvents().forEach(function (ev) {
           if (ev.title.includes(toolToRemove)) {
             ev.remove();
@@ -486,23 +522,23 @@
         updateRemoveToolDropdown();
       });
 
-      // === 10) Keep “Remove Tool” Dropdown in Sync ===
+      // === 10) Synchronize “Remove Tool” Dropdown ===
       function updateRemoveToolDropdown() {
         var removeDropdown = document.getElementById('removeTool');
         removeDropdown.innerHTML = '';
         tools.forEach(function (tool) {
           var option = document.createElement('option');
-          option.value = tool;
+          option.value       = tool;
           option.textContent = tool;
           removeDropdown.appendChild(option);
         });
       }
 
-      // INITIAL setup
+      // INITIAL SETUP
       updateRemoveToolDropdown();
       setInterval(markCurrentlyUnavailableTools, 60 * 1000);
 
-      // === 11) “Download Weekly Snapshot” CSV (with usage summary) ===
+      // === 11) “Download Weekly Snapshot” CSV (incl. usage summary) ===
       function downloadSnapshotCSV() {
         var view      = calendar.view;
         var weekStart = view.activeStart;
@@ -521,6 +557,7 @@
         });
 
         var csvRows = [];
+        // Header row
         csvRows.push(['Member', 'Tool', 'Start DateTime', 'End DateTime', 'Notes'].join(','));
 
         if (eventsThisWeek.length === 0) {
@@ -550,6 +587,7 @@
           });
         }
 
+        // Build usage summary for the week
         var usageMap = {};
         eventsThisWeek.forEach(function (ev) {
           var parts      = ev.title.split(':');
